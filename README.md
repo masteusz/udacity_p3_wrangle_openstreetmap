@@ -1,2 +1,2 @@
-# udacity_p3_wrange_openstreetmap
+# udacity_p3_wrangle_openstreetmap
 Repository for Nanodegree project submission
