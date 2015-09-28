@@ -1,0 +1,90 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title></title>
+  <style type="text/css">code{white-space: pre;}</style>
+</head>
+<body>
+<h1 id="nanodegree-project-3---data-wrangle-openstreetmaps-data">Nanodegree Project 3 - Data Wrangle OpenStreetMaps Data</h1>
+<p><strong>Mateusz Stankiewicz</strong></p>
+<p><em>Map Area: Poznań, Poland, Europe</em></p>
+<p><a href="https://www.openstreetmap.org/relation/165941#map=12/52.4079/16.9495">OSM Link - Poznan</a></p>
+<h2 id="problems-encountered-with-the-map">Problems Encountered with the map</h2>
+<p>After processing the xml file with parse_into_json.py, I have noticed two main issues with the data file:</p>
+<ol style="list-style-type: decimal">
+<li>Polish diacritics in street names</li>
+<li>Street names contained house numbers</li>
+</ol>
+<p>All other issues were solved by code used in Lesson 6.</p>
+<p><strong>Polish diacrtitics in street names</strong></p>
+<p>Polish names usually contain characters with diacritics (like ą,ś,ć,ź), which are well represented using UTF-8 encoding, but didn't translate well when uploaded to MongoDB. I have decided to remove the diacritics and leave only the character i.e. ą became a. The code responsible for change is available in <em>parse_into_json.py:change_diacritics()</em>.</p>
+<p><strong>Street names contain house numbers in name</strong></p>
+<p>Some of less common streets contained house numbers in their addr:street tags. Filtering them out was mainly manual labor, because I could not detect any pattern - some names contain only one word (i.e. Strzeszynska) or multiple (i.e. Osiedle Edwarda Raczynskiego) or combination of numbers and letters (i.e. 11 Listopada). Also, housenumbers are also very various ranging from simple numbers to numbers with dividers (6/8) or combination of numbers, letters and dividers (i.e. 1A/8 or 6/4B). Fortunately it was a very small subset containing about 40 elements to change.</p>
+<h2 id="data-overview">Data Overview</h2>
+<h3 id="poznan-dataset">Poznan dataset:</h3>
+<ul>
+<li>poznan_poland.osm: 163MB</li>
+<li>poznan_poland.osm.json: 177MB</li>
+</ul>
+<h4 id="initializing-the-db-connection">Initializing the DB connection:</h4>
+<pre><code>client = pymongo.MongoClient(&quot;mongodb://localhost:27017&quot;)
+db = client.maps
+poznan = db.poznan</code></pre>
+<h4 id="number-of-documents">Number of documents:</h4>
+<pre><code>poznan.find().count()
+
+795240</code></pre>
+<h4 id="number-of-nodes">Number of nodes:</h4>
+<pre><code>poznan.find({&quot;type&quot;: &quot;node&quot;}).count()
+
+694626</code></pre>
+<h4 id="number-of-ways">Number of ways:</h4>
+<pre><code>poznan.find({&quot;type&quot;: &quot;way&quot;}).count()
+
+100614</code></pre>
+<h4 id="number-of-distinct-users">Number of distinct users:</h4>
+<pre><code>len(poznan.distinct(&quot;created.user&quot;))
+
+708</code></pre>
+<h4 id="top-3-contributing-users">Top 3 contributing users:</h4>
+<pre><code>poznan.aggregate([
+        {&quot;$group&quot;: {&quot;_id&quot;: &quot;$created.user&quot;, &quot;count&quot;: {&quot;$sum&quot;: 1}}},
+        {&quot;$sort&quot;: {&quot;count&quot;: -1}},
+        {&quot;$limit&quot;: 3}
+    ])
+
+[{u&#39;count&#39;: 157109, u&#39;_id&#39;: u&#39;piottr&#39;}, {u&#39;count&#39;: 98892, u&#39;_id&#39;: u&#39;miko101&#39;}, {u&#39;count&#39;: 92214, u&#39;_id&#39;: u&#39;Tomasz_W&#39;}]</code></pre>
+<h4 id="average-contributions-per-user">Average contributions per user:</h4>
+<pre><code>avg = poznan.aggregate([
+    {&quot;$group&quot;: {&quot;_id&quot;: &quot;$created.user&quot;, &quot;count&quot;: {&quot;$sum&quot;: 1}}},
+    {&quot;$group&quot;: {&quot;_id&quot;: &quot;$created.user&quot;, &quot;average&quot;: {&quot;$avg&quot;: &quot;$count&quot;}}}
+])
+
+[{u&#39;average&#39;: 1123.2203389830509, u&#39;_id&#39;: None}]</code></pre>
+<h2 id="additional-ideas">Additional Ideas</h2>
+<h3 id="contributor-statistics">Contributor statistics</h3>
+<p>This idea has been taken from Udacity Sample Project - I really liked it.</p>
+<p>Top user contribution percentage (piottr) - 19.76%</p>
+<p>Combined top 2 users' contribution (piottr and miko101) - 32.19%</p>
+<p>Combined Top 10 users contribution - 77.44%</p>
+<p>The user contributions are not as skewed as in Sample Project. We see here that there's a group of dedicated users, that have made most of the changes, but there's no monopoly of a single user. One username in top10 suggests that it is a bot, but it stays in the middle of the ranking.</p>
+<h3 id="top-3-fuel-station-operators">Top 3 fuel station operators</h3>
+<pre><code>res = poznan.aggregate([{&quot;$match&quot;: {&quot;amenity&quot;: &quot;fuel&quot;}},
+                        {&quot;$group&quot;: {&quot;_id&quot;: &quot;$operator&quot;, &quot;count&quot;: {&quot;$sum&quot;: 1}}},
+                        {&quot;$sort&quot;: {&quot;count&quot;: -1}}, {&quot;$limit&quot;: 3}])
+[{u&#39;count&#39;: 30, u&#39;_id&#39;: None}, {u&#39;count&#39;: 20, u&#39;_id&#39;: u&#39;PKN Orlen&#39;}, {u&#39;count&#39;: 15, u&#39;_id&#39;: u&#39;BP Europa SE Oddzial w Polsce&#39;}]</code></pre>
+<h3 id="count-of-places-accessible-by-wheelchairs">Count of places accessible by wheelchairs</h3>
+<pre><code>all_amenities = poznan.find({&quot;amenity&quot;: {&quot;$exists&quot;: &quot;true&quot;}}).count()
+
+5139</code></pre>
+<pre><code>wheelchair_accessible = poznan.find({&quot;amenity&quot;: {&quot;$exists&quot;: &quot;true&quot;}, &quot;wheelchair&quot;: &quot;yes&quot;}).count()
+
+137</code></pre>
+<p>This value does not mean that there are so little places that are wheelchair accessible, but more probably the data is very incomplete.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>After reviewing the OSM data for Poznań I can see that geospatial data is very detailed. However, amenities and other places are missing details, which could be beneficial for general use. I was pleased to see that there's thriving community, which improves the map constantly. The streetnames needed only very little cleaning, but that showed that using this method could further improve, already well prepared, dataset.</p>
+</body>
+</html>
